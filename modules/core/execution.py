@@ -538,6 +538,8 @@ class BoardObserver:
         self.last_progress: float = -1.0
         self.cached_history: Optional[dict] = None
         self._clear_speed_saved: Optional[float] = None
+        # Latched "a run is in flight" flag — see _detect_edges' run-end block.
+        self._run_latched = False
         self._was_quiet_wled_off = False
         self._fail_count = 0
         self._tick = 0
@@ -562,6 +564,7 @@ class BoardObserver:
         self.last_progress = -1.0
         self.cached_history = None
         self._clear_speed_saved = None
+        self._run_latched = False
 
     def on_run_started(self) -> None:
         """Called by the command layer so the first poll attributes time correctly."""
@@ -609,8 +612,12 @@ class BoardObserver:
         largest = st.get("heap_largest") if st else None
         if isinstance(largest, (int, float)) and largest < self.HEAP_LARGEST_WARN:
             return self.POLL_LOWHEAP
+        # "Run" belongs here alongside Hold/Home/Jog: after the job is popped at
+        # file EOF `running` is already False while the planner buffer drains, and
+        # the table is still physically moving. Without it we back off to the idle
+        # cadence for the last seconds of every pattern.
         active = bool(st and (st.get("running") or (st.get("playlist") or {}).get("active")
-                              or _state(st) in ("Hold", "Home", "Jog")))
+                              or _state(st) in ("Run", "Hold", "Home", "Jog")))
         return self.POLL_ACTIVE if active else self.POLL_IDLE
 
     # -- reconnect / DHCP relocate -------------------------------------------
@@ -722,7 +729,17 @@ class BoardObserver:
             if self._tick % 300 == 0:
                 asyncio.ensure_future(asyncio.to_thread(board_settings.adopt_board_playlists))
 
-        self.last_translated = translate_status(st, self, now)
+        # Flaky-wifi ride-out: one dropped poll must not be reported as a
+        # stopped run. Broadcasting the degraded idle status (is_running False,
+        # current_file None) on a single miss would close the Now Playing UI,
+        # blank MQTT/HA, and reset progress — then the next good poll flaps it
+        # all back. While still inside the OFFLINE_GRACE window and we have a
+        # prior observation, keep reporting the last-known status; the grace
+        # block above clears `prev` once the board is confirmed gone, after
+        # which this falls through to the real idle/offline status.
+        riding_out = st is None and self.prev is not None and bool(self.last_translated)
+        if not riding_out:
+            self.last_translated = translate_status(st, self, now)
         # Mirror the progress 4-tuple for the MQTT handler, which unpacks it.
         prog = self.last_translated.get("progress")
         state.execution_progress = (
@@ -843,9 +860,20 @@ class BoardObserver:
             self._clear_speed_saved = None
 
         # Run end: nothing running, no active playlist, machine idle.
-        was_active = prev_running or bool(prev_pl.get("active"))
+        #
+        # LATCHED, not edge-triggered on the previous poll. The firmware pops the
+        # job at EOF of the *file read* ("<name> job sent" -> Job::unnest()), so
+        # `running` goes False while the planner buffer is still draining and the
+        # machine still reports Run. Requiring the running->False drop and the
+        # Idle state on the same poll loses the transition entirely: by the time
+        # the board reaches Idle, prev_running is already False. The run then
+        # never ends for us — stale current_playing_file, and WLED stuck on the
+        # playing effect until the next run.
         is_active = running or bool(pl.get("active"))
-        if was_active and not is_active and _state(st) in ("Idle", "Alarm"):
+        if is_active:
+            self._run_latched = True
+        elif self._run_latched and _state(st) in ("Idle", "Alarm"):
+            self._run_latched = False
             logger.info("Observed run end on the board")
             _reset_run_state()
             state.save()
@@ -900,12 +928,17 @@ class BoardObserver:
                 pass
 
     def _on_idle_leds(self) -> None:
-        if state.led_controller and state.led_automation_enabled:
-            try:
-                asyncio.get_running_loop().create_task(
-                    state.led_controller.effect_idle_async(None))
-            except RuntimeError:
-                pass
+        # Delegate rather than calling effect_idle_async directly: the helper is
+        # what also applies Still Sands (power off instead of the idle effect)
+        # and arms the dw_led_idle_timeout auto-off. Calling the effect straight
+        # left both dead for a normally-finished pattern. It does its own
+        # led_controller / automation-mode gating — manual mode still needs the
+        # Still Sands branch, so don't pre-filter on led_automation_enabled here.
+        from modules.core.pattern_manager import start_idle_led_timeout
+        try:
+            asyncio.get_running_loop().create_task(start_idle_led_timeout())
+        except RuntimeError:
+            pass
 
     async def _quiet_hours_wled(self, now: float) -> None:
         """The one surviving host Still Sands behavior: switch WLED off during

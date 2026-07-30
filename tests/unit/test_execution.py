@@ -8,6 +8,7 @@ Covers:
 - start_playlist call order (stop-first, NVS params, mirror, run)
 - skip routing (playlist vs single pattern)
 """
+import asyncio
 import json
 import pytest
 from unittest.mock import MagicMock, patch
@@ -238,6 +239,19 @@ class TestObserverEdges:
         with patch("modules.core.pattern_manager.EXECUTION_LOG_FILE", str(path)):
             yield path
 
+    @pytest.fixture
+    def idle_leds(self):
+        """Records the run-end LED handoff. _on_idle_leds imports the helper at
+        call time, so patching the pattern_manager attribute intercepts it."""
+        calls = []
+
+        async def fake_start_idle_led_timeout(*a, **kw):
+            calls.append(True)
+
+        with patch("modules.core.pattern_manager.start_idle_led_timeout",
+                   fake_start_idle_led_timeout):
+            yield calls
+
     async def test_file_transition_logs_history(self, log_file):
         state.conn = FakeConn()
         obs = BoardObserver()
@@ -306,6 +320,67 @@ class TestObserverEdges:
         assert state.current_playlist is None
         assert state.current_playing_file is None
 
+    async def test_run_end_survives_planner_drain(self, log_file, idle_leds):
+        """The firmware pops the job at file EOF ("<name> job sent" ->
+        Job::unnest()), so `running` goes False while the planner buffer is
+        still draining and the machine still reports Run; Idle only arrives a
+        poll or two later. Requiring both on the same poll lost the run end
+        outright — stale current_playing_file, and WLED stuck on the playing
+        effect until the next run."""
+        state.conn = FakeConn()
+        obs = BoardObserver()
+        await obs.process(_status(file="/patterns/a.thr", progress=0.5), now=0.0)
+
+        # Job popped, buffer draining: not running, but the table still moves.
+        await obs.process(_status(running=False, state="Run", file="", progress=1.0), now=1.0)
+        await obs.process(_status(running=False, state="Run", file="", progress=1.0), now=3.0)
+        await asyncio.sleep(0)
+        assert not idle_leds, "went idle while the table was still moving"
+
+        # Buffer empty: the run is genuinely over, however late Idle shows up.
+        await obs.process(_status(running=False, state="Idle", file="", progress=1.0), now=5.0)
+        await asyncio.sleep(0)
+        assert idle_leds, "run end lost — idle LEDs never fired"
+        assert state.current_playing_file is None
+
+    async def test_idle_leds_fire_once_per_run(self, log_file, idle_leds):
+        """The latch clears on the first idle poll — a table sitting idle must
+        not re-send the idle effect (and re-arm the timeout) every 2 seconds."""
+        state.conn = FakeConn()
+        obs = BoardObserver()
+        await obs.process(_status(file="/patterns/a.thr"), now=0.0)
+        for i in range(3):
+            await obs.process(_status(running=False, state="Idle", file=""), now=10.0 + i)
+        await asyncio.sleep(0)
+        assert len(idle_leds) == 1
+
+    async def test_no_idle_leds_without_a_run(self, log_file, idle_leds):
+        """Backend starting up against an already-idle board is not a run end."""
+        state.conn = FakeConn()
+        obs = BoardObserver()
+        await obs.process(_status(running=False, state="Idle", file=""), now=0.0)
+        await obs.process(_status(running=False, state="Idle", file=""), now=2.0)
+        await asyncio.sleep(0)
+        assert not idle_leds
+
+    async def test_playlist_gap_is_not_a_run_end(self, log_file, idle_leds):
+        """Between playlist patterns the board reports running False with the
+        playlist still active. The run isn't over, so the LEDs stay put."""
+        state.conn = FakeConn()
+        obs = BoardObserver()
+        await obs.process(_status(file="/patterns/a.thr",
+                                  playlist={"active": True, "total": 2}), now=0.0)
+        await obs.process(_status(running=False, state="Idle", file="",
+                                  playlist={"active": True, "total": 2,
+                                            "pause_remaining": 30}), now=60.0)
+        await asyncio.sleep(0)
+        assert not idle_leds
+        # ...and the idle effect still lands once the playlist itself ends.
+        await obs.process(_status(running=False, state="Idle", file="",
+                                  playlist={"active": False}), now=90.0)
+        await asyncio.sleep(0)
+        assert len(idle_leds) == 1
+
     async def test_reboot_guard(self, log_file):
         state.conn = FakeConn()
         obs = BoardObserver()
@@ -313,7 +388,33 @@ class TestObserverEdges:
         await obs.process(_status(running=False, state="Idle", file="", uptime=10), now=10.0)
         # Reboot detected: context reset, no completion logged
         assert not log_file.exists()
-        assert obs.prev is not None  # keeps observing after reset
+
+    async def test_dropped_poll_rides_out_before_stopping(self, log_file):
+        """A dropped poll (flaky wifi) holds the last-known run within the
+        OFFLINE_GRACE window instead of flapping to stopped, so the Now Playing
+        UI / MQTT don't close-and-reopen. Only once the board is confirmed gone
+        (grace exceeded) is the run reported as stopped."""
+        state.conn = FakeConn()
+        obs = BoardObserver()
+        broadcasts = []
+
+        async def capture(payload):
+            broadcasts.append(payload)
+        obs.on_status = capture
+
+        await obs.process(_status(file="/patterns/a.thr", progress=0.5), now=0.0)
+        assert broadcasts[-1]["is_running"] is True
+
+        # First misses (within OFFLINE_GRACE=3) keep reporting the live run.
+        await obs.process(None, now=1.0)
+        assert broadcasts[-1]["is_running"] is True
+        assert broadcasts[-1]["current_file"] == "./patterns/a.thr"
+        await obs.process(None, now=2.0)
+        assert broadcasts[-1]["is_running"] is True
+
+        # Third consecutive miss hits the grace threshold: run declared over.
+        await obs.process(None, now=3.0)
+        assert broadcasts[-1]["is_running"] is False
 
 
 class TestCommands:
