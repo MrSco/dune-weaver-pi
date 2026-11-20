@@ -6,6 +6,51 @@
 
 **An open-source kinetic sand art table that creates mesmerizing patterns using a ball controlled by precision motors.**
 
+## Dune Weaver Mini (this fork)
+
+This fork (branch `mini-cache`) runs the **free 3D-printed DW Mini** (bare ESP32,
+28BYJ-48 motors, no SD card) on the firmware from
+[MrSco/dune-weaver-firmware](https://github.com/MrSco/dune-weaver-firmware), which
+has the install steps for the table. It is not supported by the Dune Weaver team.
+
+The Mini has no SD card, so this app keeps the **whole pattern library** and the
+table holds only a **cache** of about 1.7 MB (compressed). Before a pattern or
+playlist plays, any missing patterns are uploaded and the least recently played
+ones are removed. A playlist must fit in the cache at once (typically 15–25
+patterns); otherwise it won't start, and the app shows why. Table firmware
+updates appear in Settings when a new Mini release is published.
+
+### Home Assistant add-on
+
+Add `https://github.com/MrSco/dune-weaver-pi` as a repository in the add-on store
+and install **Dune Weaver**. It adds a sidebar panel (also on port 8099), keeps
+the library in `/share/dune_weaver/patterns`, and sets up MQTT through the
+Mosquitto add-on if you have it. See [`dune_weaver/DOCS.md`](dune_weaver/DOCS.md).
+
+### Raspberry Pi
+
+```bash
+git clone -b mini-cache https://github.com/MrSco/dune-weaver-pi
+cd dune-weaver-pi
+bash setup-pi.sh
+```
+
+`setup-pi.sh` installs this checkout as a service (it doesn't fetch upstream).
+Then turn on Mini firmware updates and turn off the built-in app updater (it
+compares against upstream releases, not this branch):
+
+```bash
+sudo systemctl edit dune-weaver
+#   [Service]
+#   Environment=DW_FIRMWARE_REPO=MrSco/dune-weaver-firmware
+#   Environment=DW_DISABLE_SELF_UPDATE=1
+sudo systemctl restart dune-weaver
+```
+
+Update the app with `git pull && sudo systemctl restart dune-weaver`. The table is
+found on the network automatically, or set its address in Settings. The rest of
+this README is upstream's and describes the official tables.
+
 ## Features
 
 - **Modern React UI** — A responsive, touch-friendly web interface that installs as a PWA on any device
