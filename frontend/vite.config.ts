@@ -5,10 +5,16 @@ import path from 'path'
 
 // https://vite.dev/config/
 export default defineConfig({
+  // DW fork: relative asset URLs so the app also works under a sub-path
+  // (Home Assistant ingress); index.html's <base href> sets the root.
+  base: './',
   plugins: [
     react(),
     VitePWA({
       registerType: 'autoUpdate',
+      // DW fork: registered from index.html, and only when served at the
+      // site root - never under Home Assistant's origin via ingress.
+      injectRegister: false,
       includeAssets: ['favicon.ico', 'apple-touch-icon.png', 'android-chrome-192x192.png', 'android-chrome-512x512.png'],
       manifest: false, // We use our own manifest at /static/site.webmanifest
       workbox: {

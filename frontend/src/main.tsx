@@ -26,7 +26,7 @@ const queryClient = new QueryClient({
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <BrowserRouter>
+    <BrowserRouter basename={(window as { __DW_BASE__?: string }).__DW_BASE__ || undefined}>
       <QueryClientProvider client={queryClient}>
         <App />
       </QueryClientProvider>

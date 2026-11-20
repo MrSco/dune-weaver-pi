@@ -5,6 +5,87 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <meta name="description" content="Control your kinetic sand table" />
 
+    <!-- DW fork: Home Assistant ingress support. The server rewrites this tag
+         to the ingress path (X-Ingress-Path); everywhere else it stays "/". -->
+    <base href="/" />
+    <script>
+      // The app uses root-absolute URLs ('/api/...', '/ws/...', '/static/...').
+      // When served under a sub-path, prefix them: requests (fetch, XHR,
+      // WebSocket, EventSource) and src/href attributes, so upstream code
+      // needs no per-call changes. No-op at the site root.
+      (function () {
+        var base = new URL(document.baseURI).pathname.replace(/\/+$/, '');
+        window.__DW_BASE__ = base;
+        if (!base) {
+          if ('serviceWorker' in navigator) {
+            window.addEventListener('load', function () {
+              navigator.serviceWorker.register('/sw.js', { scope: '/' }).catch(function () {});
+            });
+          }
+          return;
+        }
+        function fixPath(u) {
+          return (typeof u === 'string' && u.charAt(0) === '/' && u.charAt(1) !== '/' &&
+                  u.indexOf(base + '/') !== 0 && u !== base) ? base + u : u;
+        }
+        function fixUrl(u) {
+          if (typeof u !== 'string') u = String(u);
+          if (u.charAt(0) === '/' && u.charAt(1) !== '/') return fixPath(u);
+          try {
+            var x = new URL(u, location.href);
+            if (x.host === location.host && x.pathname.indexOf(base + '/') !== 0) {
+              x.pathname = base + x.pathname;
+              return x.toString();
+            }
+          } catch (e) {}
+          return u;
+        }
+        var origFetch = window.fetch;
+        window.fetch = function (input, init) {
+          if (typeof input === 'string' || input instanceof URL) input = fixUrl(input);
+          return origFetch.call(this, input, init);
+        };
+        var origOpen = XMLHttpRequest.prototype.open;
+        XMLHttpRequest.prototype.open = function (method, url) {
+          arguments[1] = fixUrl(url);
+          return origOpen.apply(this, arguments);
+        };
+        function wrap(Orig) {
+          if (!Orig) return Orig;
+          var W = function (url, opts) {
+            return opts === undefined ? new Orig(fixUrl(url)) : new Orig(fixUrl(url), opts);
+          };
+          W.prototype = Orig.prototype;
+          ['CONNECTING', 'OPEN', 'CLOSING', 'CLOSED'].forEach(function (k) {
+            if (k in Orig) W[k] = Orig[k];
+          });
+          return W;
+        }
+        window.WebSocket = wrap(window.WebSocket);
+        window.EventSource = wrap(window.EventSource);
+        function fixEl(el) {
+          if (!el.getAttribute) return;
+          ['src', 'href'].forEach(function (a) {
+            var v = el.getAttribute(a);
+            var nv = fixPath(v);
+            if (v && nv !== v) el.setAttribute(a, nv);
+          });
+        }
+        new MutationObserver(function (records) {
+          records.forEach(function (r) {
+            if (r.type === 'attributes') { fixEl(r.target); return; }
+            r.addedNodes.forEach(function (n) {
+              if (n.nodeType !== 1) return;
+              fixEl(n);
+              if (n.querySelectorAll) n.querySelectorAll('[src],[href]').forEach(fixEl);
+            });
+          });
+        }).observe(document.documentElement, {
+          subtree: true, childList: true, attributes: true, attributeFilter: ['src', 'href']
+        });
+      })();
+    </script>
+
     <!-- PWA Meta Tags -->
     <meta name="theme-color" content="#171310" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
@@ -58,10 +139,10 @@
           .catch(function() {});
       })();
     </script>
-    <script type="module" crossorigin src="/assets/index-3tZjEI3a.js"></script>
-    <link rel="stylesheet" crossorigin href="/assets/index-Djx5fY-0.css">
-  <script id="vite-plugin-pwa:register-sw" src="/registerSW.js"></script></head>
+    <script type="module" crossorigin src="./assets/index-CwdVKkaO.js"></script>
+    <link rel="stylesheet" crossorigin href="./assets/index-CKPYbEY9.css">
+  </head>
   <body>
-    <div id="root"></div>
+    <div id="root"></div>
   </body>
 </html>

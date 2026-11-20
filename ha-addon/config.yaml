@@ -1,5 +1,5 @@
 name: Dune Weaver
-version: "5.0.1-mini.1"
+version: "5.0.1-mini.2"
 slug: dune_weaver
 description: >-
   Host for a Dune Weaver sand table (Mini fork): web UI, pattern library,
@@ -13,7 +13,12 @@ startup: application
 boot: auto
 # Host networking: the table is found by mDNS and talks plain HTTP on the LAN.
 host_network: true
-webui: "http://[HOST]:[PORT:8099]/"
+# Sidebar panel through Home Assistant (HTTPS + HA login); the same UI is
+# also reachable directly on the LAN at port 8099.
+ingress: true
+ingress_port: 8099
+panel_icon: mdi:waves
+panel_title: Dune Weaver
 ports:
   8099/tcp: 8099
 ports_description:
