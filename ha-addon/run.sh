@@ -11,7 +11,7 @@ APP=/app
 DATA=/data
 LIB=/share/dune_weaver/patterns
 
-mkdir -p "$LIB" "$DATA/board_cache" "$DATA/static_custom"
+mkdir -p "$LIB" "$DATA/board_cache" "$DATA/static/custom"
 
 # Seed the library with the bundled patterns (never overwrites the user's).
 cp -rn "$APP/patterns/." "$LIB/" 2>/dev/null || true
@@ -21,13 +21,20 @@ ln -sfn "$LIB" patterns
 for item in templates VERSION wifi steps_calibration; do
   [ -e "$APP/$item" ] && ln -sfn "$APP/$item" "$item"
 done
-mkdir -p static
+# /static is served by Starlette's StaticFiles, which refuses symlinked files,
+# so the bundled assets are copied (refreshed every start). static/custom
+# (the uploaded logo) is real, persistent data. dist/ is served by nginx
+# straight from /app and is not needed here.
+if [ -d "$DATA/static_custom" ]; then           # 5.0.1-mini.1/.2 layout
+  cp -rn "$DATA/static_custom/." static/custom/ 2>/dev/null || true
+  rm -rf "$DATA/static_custom"
+fi
 for entry in "$APP"/static/*; do
   name=$(basename "$entry")
-  [ "$name" = custom ] && continue
-  ln -sfn "$entry" "static/$name"
+  case "$name" in custom|dist) continue ;; esac
+  [ -L "static/$name" ] && rm -f "static/$name"
+  cp -rf "$entry" static/
 done
-ln -sfn "$DATA/static_custom" static/custom
 
 # Add-on options.
 opt() { python3 -c "import json,sys; print(json.load(open('$DATA/options.json')).get(sys.argv[1]) or '')" "$1" 2>/dev/null; }
