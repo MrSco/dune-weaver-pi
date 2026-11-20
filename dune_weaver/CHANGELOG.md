@@ -1,5 +1,10 @@
 # Changelog
 
+## 5.0.1-mini.5
+
+- Fix start-up after updating from 5.0.1-mini.3 (leftover link for the
+  custom logo folder).
+
 ## 5.0.1-mini.4
 
 - Installs from the GitHub add-on repository (MrSco/dune-weaver-pi), so new

@@ -27,7 +27,14 @@ backup_data() {
   rm -rf "$BACKUP" && mv "$BACKUP.tmp" "$BACKUP"
 }
 
+# 5.0.1-mini.1..3 made static/custom a symlink (to $DATA/static_custom); it
+# must become a real directory.
+[ -L "$DATA/static/custom" ] && rm -f "$DATA/static/custom"
 mkdir -p "$LIB" "$DATA/board_cache" "$DATA/static/custom"
+if [ -d "$DATA/static_custom" ]; then
+  cp -rn "$DATA/static_custom/." "$DATA/static/custom/" 2>/dev/null || true
+  rm -rf "$DATA/static_custom"
+fi
 
 # Seed the library with the bundled patterns (never overwrites the user's).
 cp -rn "$APP/patterns/." "$LIB/" 2>/dev/null || true
@@ -41,10 +48,6 @@ done
 # so the bundled assets are copied (refreshed every start). static/custom
 # (the uploaded logo) is real, persistent data. dist/ is served by nginx
 # straight from /app and is not needed here.
-if [ -d "$DATA/static_custom" ]; then           # 5.0.1-mini.1/.2 layout
-  cp -rn "$DATA/static_custom/." static/custom/ 2>/dev/null || true
-  rm -rf "$DATA/static_custom"
-fi
 for entry in "$APP"/static/*; do
   name=$(basename "$entry")
   case "$name" in custom|dist) continue ;; esac
