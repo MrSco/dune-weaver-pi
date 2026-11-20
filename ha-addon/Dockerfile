@@ -1,0 +1,24 @@
+# Dune Weaver host as a Home Assistant add-on (DW Mini fork).
+# The build context is the assembled add-on folder (see deploy.sh): app/ holds
+# a snapshot of this repository, including the pre-built frontend in
+# app/static/dist, so no Node toolchain is needed here.
+FROM python:3.11-slim-bookworm
+
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends nginx tzdata curl \
+ && rm -rf /var/lib/apt/lists/* /etc/nginx/sites-enabled/default
+
+COPY app/requirements-nonrpi.txt /tmp/requirements.txt
+RUN pip install --no-cache-dir -r /tmp/requirements.txt
+
+COPY app /app
+COPY nginx.conf /etc/nginx/conf.d/dune-weaver.conf
+COPY run.sh /run.sh
+RUN chmod +x /run.sh
+
+ENV PYTHONUNBUFFERED=1 \
+    DW_DISABLE_SELF_UPDATE=1 \
+    DW_PATTERN_CACHE=1 \
+    DW_CLEAR_VARIANT=mini
+
+CMD ["/run.sh"]

@@ -1,0 +1,31 @@
+name: Dune Weaver
+version: "5.0.1-mini.1"
+slug: dune_weaver
+description: >-
+  Host for a Dune Weaver sand table (Mini fork): web UI, pattern library,
+  playlists and MQTT entities. Keeps the library here and uploads patterns
+  into the table's on-board cache as they are needed.
+url: https://github.com/tuanchris/dune-weaver-pi
+arch:
+  - amd64
+init: false
+startup: application
+boot: auto
+# Host networking: the table is found by mDNS and talks plain HTTP on the LAN.
+host_network: true
+webui: "http://[HOST]:[PORT:8099]/"
+ports:
+  8099/tcp: 8099
+ports_description:
+  8099/tcp: Dune Weaver web UI
+map:
+  - share:rw
+services:
+  - mqtt:want
+hassio_api: false
+options:
+  board_url: ""
+  log_level: INFO
+schema:
+  board_url: "str?"
+  log_level: list(DEBUG|INFO|WARNING|ERROR)
