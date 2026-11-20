@@ -21,7 +21,7 @@ RUN git clone --depth 1 --branch "addon-${BUILD_VERSION}" "${DW_REPO}" /src \
  && cp dune_weaver/nginx.conf /etc/nginx/conf.d/dune-weaver.conf \
  && cp dune_weaver/run.sh /run.sh \
  && chmod +x /run.sh \
- && rm -rf /src \
+ && cd / && rm -rf /src \
  && pip install --no-cache-dir -r /app/requirements-nonrpi.txt
 
 ENV PYTHONUNBUFFERED=1 \
