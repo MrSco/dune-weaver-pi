@@ -60,11 +60,15 @@ def get_latest_release(force: bool = False) -> Optional[dict]:
 
 
 def parse_version(fw: Optional[str]) -> Optional[tuple]:
-    """'v0.1.10 (main-5ce4400d-dirty)' -> (0, 1, 10); None if unparseable."""
+    """'v0.1.10 (main-5ce4400d-dirty)' -> (0, 1, 10, 0); None if unparseable.
+
+    DW Mini fork: Mini releases are tagged on top of the upstream version they
+    are based on ('v0.2.6-mini.2'); the '-mini.N' number is a fourth component
+    so they order after their base and after each other."""
     if not fw:
         return None
-    m = re.search(r"v?(\d+)\.(\d+)\.(\d+)", fw)
-    return tuple(int(g) for g in m.groups()) if m else None
+    m = re.search(r"v?(\d+)\.(\d+)\.(\d+)(?:-mini\.(\d+))?", fw)
+    return tuple(int(g or 0) for g in m.groups()) if m else None
 
 
 def is_newer(latest_tag: str, current_fw: Optional[str]) -> bool:

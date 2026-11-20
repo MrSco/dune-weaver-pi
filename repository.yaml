@@ -1,0 +1,5 @@
+# Home Assistant add-on repository. Add it in Settings > Add-ons >
+# Add-on store > (menu) Repositories:  https://github.com/MrSco/dune-weaver-pi
+name: Dune Weaver Mini add-ons (MrSco)
+url: https://github.com/MrSco/dune-weaver-pi
+maintainer: MrSco

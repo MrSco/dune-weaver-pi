@@ -1,11 +1,11 @@
 name: Dune Weaver
-version: "5.0.1-mini.3"
+version: "5.0.1-mini.4"
 slug: dune_weaver
 description: >-
   Host for a Dune Weaver sand table (Mini fork): web UI, pattern library,
   playlists and MQTT entities. Keeps the library here and uploads patterns
   into the table's on-board cache as they are needed.
-url: https://github.com/tuanchris/dune-weaver-pi
+url: https://github.com/MrSco/dune-weaver-pi
 arch:
   - amd64
 init: false

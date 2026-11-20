@@ -10,6 +10,22 @@ set -e
 APP=/app
 DATA=/data
 LIB=/share/dune_weaver/patterns
+BACKUP=/share/dune_weaver/data-backup
+# The app's persistent state (relative to $DATA).
+PERSIST="settings.json state.json playlists.json metadata_cache.json execution_times.jsonl board_cache static/custom"
+
+# A fresh install (no settings yet) restores the last backup, e.g. when moving
+# from the local add-on to the repository one, or after a reinstall.
+if [ ! -e "$DATA/settings.json" ] && [ -d "$BACKUP" ]; then
+  echo "Restoring app data from $BACKUP"
+  cp -a "$BACKUP/." "$DATA/"
+fi
+
+backup_data() {
+  mkdir -p "$BACKUP.tmp"
+  ( cd "$DATA" && for p in $PERSIST; do [ -e "$p" ] && cp -a --parents "$p" "$BACKUP.tmp/"; done ) || return 0
+  rm -rf "$BACKUP" && mv "$BACKUP.tmp" "$BACKUP"
+}
 
 mkdir -p "$LIB" "$DATA/board_cache" "$DATA/static/custom"
 
@@ -60,6 +76,9 @@ EOF
     [ -n "$MQTT_BROKER" ] && echo "MQTT broker from Home Assistant: $MQTT_BROKER:$MQTT_PORT"
   fi
 fi
+
+backup_data
+( while sleep 3600; do backup_data; done ) &
 
 nginx
 echo "Dune Weaver web UI on port 8099; pattern library in $LIB"

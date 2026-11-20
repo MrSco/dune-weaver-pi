@@ -1,5 +1,5 @@
 # Dune Weaver host as a Home Assistant add-on (DW Mini fork).
-# The build context is the assembled add-on folder (see deploy.sh): app/ holds
+# Local development build (deploy.sh). The build context is the assembled add-on folder: app/ holds
 # a snapshot of this repository, including the pre-built frontend in
 # app/static/dist, so no Node toolchain is needed here.
 FROM python:3.11-slim-bookworm
@@ -19,6 +19,7 @@ RUN chmod +x /run.sh
 ENV PYTHONUNBUFFERED=1 \
     DW_DISABLE_SELF_UPDATE=1 \
     DW_PATTERN_CACHE=1 \
-    DW_CLEAR_VARIANT=mini
+    DW_CLEAR_VARIANT=mini \
+    DW_FIRMWARE_REPO=MrSco/dune-weaver-firmware
 
 CMD ["/run.sh"]

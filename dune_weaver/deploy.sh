@@ -1,7 +1,11 @@
 #!/bin/sh
-# Assemble the local Home Assistant add-on and copy it to the HA host.
+# DEVELOPMENT ONLY: install the working tree as a *local* add-on, to test
+# changes before publishing them. Normal installs come from the GitHub add-on
+# repository (see repository.yaml), which builds dune_weaver/Dockerfile from
+# the addon-<version> tag. Stop the repository add-on first: both use the
+# host ports 8080/8099.
 #
-#   ha-addon/deploy.sh [root@homeassistant.local]
+#   dune_weaver/deploy.sh [root@homeassistant.local]
 #
 # Ships the COMMITTED state of this repo (git archive HEAD) as app/, plus the
 # add-on files from this folder, to /addons/dune_weaver. Then, on first
@@ -23,8 +27,9 @@ ssh "$HOST" "rm -rf $DEST.new && mkdir -p $DEST.new/app"
 git -C "$REPO" archive --format=tar HEAD \
   main.py modules static templates patterns VERSION requirements-nonrpi.txt \
   | ssh "$HOST" "tar -xf - -C $DEST.new/app"
-for f in config.yaml Dockerfile run.sh nginx.conf; do
+for f in config.yaml run.sh nginx.conf; do
   tr -d '\r' < "$HERE/$f" | ssh "$HOST" "cat > $DEST.new/$f"
 done
+tr -d '\r' < "$HERE/Dockerfile.local" | ssh "$HOST" "cat > $DEST.new/Dockerfile"
 ssh "$HOST" "chmod +x $DEST.new/run.sh && rm -rf $DEST.old && { [ -d $DEST ] && mv $DEST $DEST.old || true; } && mv $DEST.new $DEST && rm -rf $DEST.old && du -sh $DEST"
 echo "Deployed to $HOST:$DEST"

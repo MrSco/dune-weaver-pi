@@ -4,7 +4,8 @@
 # Keep these as LF regardless of platform
 Dockerfile text eol=lf
 nginx.conf text eol=lf
-ha-addon/*.sh text eol=lf
-ha-addon/*.conf text eol=lf
-ha-addon/Dockerfile text eol=lf
-ha-addon/*.yaml text eol=lf
+dune_weaver/*.sh text eol=lf
+dune_weaver/*.conf text eol=lf
+dune_weaver/Dockerfile text eol=lf
+dune_weaver/*.yaml text eol=lf
+dune_weaver/Dockerfile* text eol=lf
