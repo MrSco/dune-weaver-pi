@@ -18,7 +18,7 @@ web UI, pattern library with previews, playlists, and MQTT entities.
 
 ## Options
 
-- `board_url`: the table's address (for example `http://10.0.1.32`). Leave
+- `board_url`: the table's address (for example `http://192.168.1.50`). Leave
   empty to find it automatically on the network (mDNS).
 - `log_level`: add-on log verbosity.
 
