@@ -20,6 +20,9 @@ def pytest_configure(config):
     config.addinivalue_line(
         "markers", "slow: marks slow tests"
     )
+    config.addinivalue_line(
+        "markers", "pattern_cache: run with the DW Mini board pattern cache enabled"
+    )
 
 
 def pytest_collection_modifyitems(config, items):

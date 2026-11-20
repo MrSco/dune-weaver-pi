@@ -283,9 +283,27 @@ def mirror_playlist(name: str, files: list, conn=None, ensure_patterns: bool = F
     caller's resolver when patterns are ensured separately so the playlist
     lines and the uploads land on the same paths."""
     from modules.core.pattern_manager import _ensure_on_board, make_sd_path_resolver
+    from modules.core import board_pattern_cache as pcache
     conn = conn or state.conn
     if not conn:
         return
+    if pcache.ENABLED and resolve is None:
+        # DW Mini fork: playlist edits are not mirrored eagerly (they would
+        # name patterns the cache may not hold); the board copy is written
+        # when the playlist runs. The autostart playlist (ensure_patterns) is
+        # the exception: the board starts it without the host, so its
+        # patterns are uploaded and pinned against eviction now.
+        if not ensure_patterns:
+            return
+        try:
+            mapping = pcache.ensure(conn, files or [])
+            pcache.ensure_clears(conn)
+            pcache.set_pinned(files or [])
+        except Exception as e:
+            logger.warning(f"Autostart playlist '{name}' not cached on the board: {e}")
+            return
+        resolve = lambda p: mapping[pcache.host_rel(p)]
+        ensure_patterns = False
     resolve = resolve or make_sd_path_resolver(conn)
     try:
         sd_path = f"/playlists/{name}.txt"
@@ -383,7 +401,11 @@ def adopt_board_playlists(conn=None) -> None:
     are kept (they reach the board the next time the user edits or plays
     them). Reads only — no SD writes, no flash wear.
     """
-    from modules.core import playlist_manager
+    from modules.core import playlist_manager, board_pattern_cache
+    if board_pattern_cache.ENABLED:
+        # DW Mini fork: the host owns playlists; the board's copies name cache
+        # hashes and would clobber the host's entries.
+        return
     conn = conn or state.conn
     if not conn:
         return
@@ -516,6 +538,15 @@ def push_custom_clears(conn=None) -> None:
     conn = conn or state.conn
     if not conn:
         return
+    from modules.core import board_pattern_cache as pcache
+    if pcache.ENABLED:
+        # DW Mini fork: the cache module owns the fixed-name clears (Mini
+        # variants by default, compressed, never evicted).
+        try:
+            pcache.ensure_clears(conn, force=True)
+        except Exception as e:
+            logger.warning(f"Could not push clear files: {e}")
+        return
     from modules.core.pattern_manager import THETA_RHO_DIR
     import os
     for board_name, custom in (
@@ -567,3 +598,11 @@ def sync_on_connect(conn=None) -> None:
     # Cache this board's catalog (patterns + playlists) for per-board display.
     sync_board_catalog(conn)
     adopt_board_playlists(conn)
+    from modules.core import board_pattern_cache as pcache
+    if pcache.ENABLED:
+        # DW Mini fork: a firmware update re-formats the board's cache; put the
+        # clear files back so the firmware's own clears always work.
+        try:
+            pcache.ensure_clears(conn)
+        except Exception as e:
+            logger.warning(f"Could not restore clear files on the board: {e}")

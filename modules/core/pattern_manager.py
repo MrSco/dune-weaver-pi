@@ -355,7 +355,10 @@ def board_catalog():
     are relative to /patterns (e.g. 'custom/x.thr'), matching what $SD/Run and
     the local preview lookup expect. Empty when no board has been synced yet.
     """
-    from modules.core import board_cache
+    from modules.core import board_cache, board_pattern_cache
+    if board_pattern_cache.ENABLED:
+        # DW Mini fork: the host library is the catalog; the board only caches.
+        return list_theta_rho_files()
     return board_cache.load_manifest().get("patterns", [])
 
 
@@ -371,6 +374,11 @@ def is_on_board(file_path) -> bool:
     True when the manifest is empty (board never synced) so we defer to the
     board rather than blocking a play on a stale/absent cache.
     """
+    from modules.core import board_pattern_cache
+    if board_pattern_cache.ENABLED:
+        # DW Mini fork: anything in the library can be played; it is uploaded
+        # into the board's cache on demand.
+        return os.path.exists(os.path.join(THETA_RHO_DIR, _host_rel_path(file_path)))
     catalog = board_catalog_set()
     if not catalog:
         return True

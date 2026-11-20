@@ -185,3 +185,12 @@ def cleanup_app_overrides():
 
     # Cleanup after test
     app.dependency_overrides.clear()
+
+
+@pytest.fixture(autouse=True)
+def _upstream_board_catalog_mode(request, monkeypatch):
+    """DW Mini fork: the board pattern cache is on by default in the app, but
+    the upstream suites test the SD-card model (board = library). Run them
+    with the cache off; tests of the cache opt in with @pytest.mark.pattern_cache."""
+    from modules.core import board_pattern_cache
+    monkeypatch.setattr(board_pattern_cache, "ENABLED", "pattern_cache" in request.keywords)

@@ -1,3 +1,4 @@
+import os
 import shutil
 import subprocess
 import logging
@@ -11,6 +12,10 @@ SYSTEMCTL = shutil.which("systemctl") or "/usr/bin/systemctl"
 
 def check_git_updates():
     """Check for available Git updates."""
+    if os.getenv("DW_DISABLE_SELF_UPDATE"):
+        # DW Mini fork: add-on images have no git checkout (see update_software).
+        return {"updates_available": False, "tag_behind_count": 0,
+                "latest_remote_tag": None, "latest_local_tag": None}
     try:
         logger.debug("Checking for Git updates")
         subprocess.run([GIT, "fetch", "--tags", "--force"], check=True)
@@ -63,6 +68,11 @@ def update_software():
     For a full update (including frontend rebuild), run 'dw update' instead.
     """
     error_log = []
+    if os.getenv("DW_DISABLE_SELF_UPDATE"):
+        # DW Mini fork: in the Home Assistant add-on the image is rebuilt by
+        # Home Assistant; there is no git checkout or systemd unit to update.
+        msg = "Updates are installed through the Home Assistant add-on"
+        return False, msg, [msg]
     logger.info("Starting software update process")
 
     def run_command(command, error_message, capture_output=False, cwd=None):

@@ -927,6 +927,54 @@ async def update_board_settings(update: BoardSettingsUpdate):
         logger.warning(f"Could not write board settings: {e}")
         raise HTTPException(status_code=502, detail=f"Board rejected the update: {e}")
 
+# ---------------------------------------------------------------------------
+# DW Mini fork: board pattern cache (host library -> board LRU cache)
+# ---------------------------------------------------------------------------
+
+class PatternCacheEstimateRequest(BaseModel):
+    files: Optional[List[str]] = None
+    playlist: Optional[str] = None
+
+
+@app.get("/api/pattern-cache", tags=["pattern-cache"])
+async def pattern_cache_status():
+    """What the board's pattern cache holds and how full it is."""
+    from modules.core import board_pattern_cache as pcache
+    if not pcache.ENABLED:
+        return {"enabled": False}
+    if not state.conn or not state.conn.is_connected():
+        raise HTTPException(status_code=409, detail="Not connected to the board")
+    try:
+        return {"enabled": True, **await asyncio.to_thread(pcache.status, state.conn)}
+    except pcache.CacheError as e:
+        raise HTTPException(status_code=503, detail=str(e))
+
+
+@app.post("/api/pattern-cache/estimate", tags=["pattern-cache"])
+async def pattern_cache_estimate(req: PatternCacheEstimateRequest):
+    """Compressed size of a set of patterns (or a playlist) against the
+    board's cache capacity, so the UI can warn before a playlist won't fit."""
+    from modules.core import board_pattern_cache as pcache
+    files = list(req.files or [])
+    if req.playlist:
+        playlist = playlist_manager.get_playlist(req.playlist)
+        if not playlist:
+            raise HTTPException(status_code=404, detail="Playlist not found")
+        files += playlist["files"]
+    result = await asyncio.to_thread(pcache.estimate, files)
+    capacity = None
+    if pcache.ENABLED and state.conn and state.conn.is_connected():
+        try:
+            _, total, _ = await asyncio.to_thread(pcache.list_board, state.conn)
+            clears = await asyncio.to_thread(pcache.estimate, pcache.CLEAR_NAMES)
+            capacity = total - pcache.RESERVE - clears["bytes"]
+        except Exception:
+            pass
+    result["capacity"] = capacity
+    result["fits"] = capacity is None or result["bytes"] <= capacity
+    return result
+
+
 class BoardCommandRequest(BaseModel):
     command: str
 

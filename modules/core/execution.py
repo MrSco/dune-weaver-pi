@@ -151,6 +151,12 @@ def _from_sd_path(sd_path: str) -> Optional[str]:
     playing custom pattern point at a path the host doesn't have."""
     if not sd_path:
         return None
+    from modules.core import board_pattern_cache as pcache
+    if pcache.ENABLED:
+        # DW Mini fork: board names are cache hashes; the index maps them back.
+        rel = pcache.host_rel_for_board_path(sd_path)
+        if rel:
+            return "./patterns/" + rel
     cached = _sd_path_cache.get(sd_path)
     if cached:
         return cached
@@ -206,14 +212,26 @@ async def run_pattern(file_path: str, clear_pattern: str = "none") -> None:
     conn = _require_conn()
     from modules.core.pattern_manager import _to_sd_path
 
-    # The pattern already lives on the board (the app plays from the board's own
-    # catalog and never uploads on play); the SD path is derived directly.
-    sd_path = _to_sd_path(file_path)
+    from modules.core import board_pattern_cache as pcache
+    mode = map_clear_mode(clear_pattern)
+    if pcache.ENABLED:
+        # DW Mini fork: the host owns the library; upload the pattern (and the
+        # clear files, if a clear runs first) into the board's cache now.
+        try:
+            mapping = await asyncio.to_thread(pcache.ensure, conn, [file_path])
+            if mode != "none":
+                await asyncio.to_thread(pcache.ensure_clears, conn)
+        except pcache.CacheError as e:
+            raise ExecutionError(str(e))
+        sd_path = next(iter(mapping.values()))
+    else:
+        # The pattern already lives on the board (the app plays from the board's
+        # own catalog and never uploads on play); the SD path is derived directly.
+        sd_path = _to_sd_path(file_path)
     try:
         await asyncio.to_thread(conn.set_feed, int(state.speed))
     except Exception as e:
         logger.warning(f"Could not set feed before run: {e}")
-    mode = map_clear_mode(clear_pattern)
     await asyncio.to_thread(conn.run_pattern, sd_path, mode)
 
     current_run = RunContext(kind="pattern", clear_pattern=mode)
@@ -265,21 +283,37 @@ async def start_playlist(playlist_name: str, run_mode: str = "single",
     ):
         await asyncio.to_thread(conn.set_setting, key, value)
 
-    # The board needs the playlist file before Run; patterns can trail behind
-    # (each one plays for minutes) except the first, which is ensured now.
-    # One shared resolver so the playlist lines and the uploads agree on
-    # paths, and existing board copies are reused instead of duplicated.
-    resolve_sd = make_sd_path_resolver(conn)
-    await asyncio.to_thread(
-        board_settings.mirror_playlist, playlist_name, files, conn, False, resolve_sd)
-    first_sd = await asyncio.to_thread(resolve_sd, host_paths[0])
-    await asyncio.to_thread(_ensure_on_board, host_paths[0], first_sd)
+    from modules.core import board_pattern_cache as pcache
+    if pcache.ENABLED:
+        # DW Mini fork: the whole playlist must be in the board's cache before
+        # it starts (the firmware sequences it without the host), so check it
+        # fits, upload what's missing, then write the playlist with the cache
+        # paths. Trailing background uploads would race the eviction.
+        try:
+            mapping = await asyncio.to_thread(pcache.ensure, conn, files)
+            if mode != "none":
+                await asyncio.to_thread(pcache.ensure_clears, conn)
+        except pcache.CacheError as e:
+            raise ExecutionError(f"Playlist '{playlist_name}': {e}")
+        resolve_cached = lambda p: mapping[pcache.host_rel(p)]
+        await asyncio.to_thread(
+            board_settings.mirror_playlist, playlist_name, files, conn, False, resolve_cached)
+    else:
+        # The board needs the playlist file before Run; patterns can trail behind
+        # (each one plays for minutes) except the first, which is ensured now.
+        # One shared resolver so the playlist lines and the uploads agree on
+        # paths, and existing board copies are reused instead of duplicated.
+        resolve_sd = make_sd_path_resolver(conn)
+        await asyncio.to_thread(
+            board_settings.mirror_playlist, playlist_name, files, conn, False, resolve_sd)
+        first_sd = await asyncio.to_thread(resolve_sd, host_paths[0])
+        await asyncio.to_thread(_ensure_on_board, host_paths[0], first_sd)
 
-    def _mirror_rest():
-        for p in host_paths[1:]:
-            _ensure_on_board(p, resolve_sd(p))
-    import threading
-    threading.Thread(target=_mirror_rest, daemon=True).start()
+        def _mirror_rest():
+            for p in host_paths[1:]:
+                _ensure_on_board(p, resolve_sd(p))
+        import threading
+        threading.Thread(target=_mirror_rest, daemon=True).start()
 
     try:
         await asyncio.to_thread(conn.set_feed, int(state.speed))

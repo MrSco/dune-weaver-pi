@@ -15,7 +15,12 @@ import requests
 
 logger = logging.getLogger(__name__)
 
-FIRMWARE_REPO = "tuanchris/dune-weaver-firmware"
+import os
+
+# DW Mini fork: upstream's releases are built for DLC32 tables and would drop
+# the Mini's unipolar motor support and pattern cache, so nothing is offered
+# unless DW_FIRMWARE_REPO names a repo publishing compatible builds.
+FIRMWARE_REPO = os.getenv("DW_FIRMWARE_REPO", "").strip()
 _CACHE_TTL = 600  # GitHub unauthenticated rate limit is 60/hr - cache lookups
 
 _cache: dict = {"at": 0.0, "release": None}
@@ -24,6 +29,8 @@ _cache: dict = {"at": 0.0, "release": None}
 def get_latest_release(force: bool = False) -> Optional[dict]:
     """Latest published firmware release, or None when unreachable / no
     firmware.bin asset. Cached for 10 minutes."""
+    if not FIRMWARE_REPO:
+        return None
     now = time.time()
     if not force and _cache["release"] and now - _cache["at"] < _CACHE_TTL:
         return _cache["release"]
