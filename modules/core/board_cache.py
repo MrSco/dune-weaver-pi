@@ -30,6 +30,7 @@ board pattern by path.
 import json
 import logging
 import os
+import threading
 
 from modules.core.state import state
 
@@ -86,7 +87,9 @@ def _read_json(path: str, default):
 def _write_json(path: str, data) -> None:
     """Atomic write (tmp + replace) so a crash mid-write can't corrupt the cache."""
     os.makedirs(os.path.dirname(path), exist_ok=True)
-    tmp = f"{path}.tmp"
+    # Unique per writer: connect-time syncs can overlap (startup connect +
+    # observer reconnect) and a shared tmp name made one os.replace fail.
+    tmp = f"{path}.{os.getpid()}.{threading.get_ident()}.tmp"
     with open(tmp, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, separators=(",", ":"))
     os.replace(tmp, path)
